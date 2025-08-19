@@ -1,0 +1,7 @@
+torch
+tokenizers
+datasets
+matplotlib
+pandas
+numpy
+tqdm
