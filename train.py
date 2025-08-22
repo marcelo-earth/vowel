@@ -96,11 +96,13 @@ def get_model_config(vocab_size, target_params=15_000_000):
     # rough formula: total ~ vocab*dim + n_layers*(12*dim^2) + vocab*dim (tied)
     # simplified: total ~ 2*vocab*dim + n_layers*12*dim^2
 
+    # hand-tuned so total params land around 15M for each vocab size
+    # bigger vocab -> smaller dim to compensate
     configs = {
-        1000: {"dim": 384, "n_heads": 6, "n_layers": 6},
-        4000: {"dim": 320, "n_heads": 8, "n_layers": 6},
-        8000: {"dim": 288, "n_heads": 6, "n_layers": 6},
-        32000: {"dim": 192, "n_heads": 6, "n_layers": 6},
+        1000: {"dim": 384, "n_heads": 6, "n_layers": 6},   # ~11M params
+        4000: {"dim": 320, "n_heads": 8, "n_layers": 6},    # ~13M params
+        8000: {"dim": 288, "n_heads": 6, "n_layers": 6},    # ~14M params
+        32000: {"dim": 192, "n_heads": 6, "n_layers": 6},   # ~14M params
     }
 
     if vocab_size in configs:
