@@ -28,6 +28,15 @@ pip install -r requirements.txt
 python train.py --vocab-size 8000
 ```
 
+## Quick results
+
+| Vocab | Dim | Total params | Embedding % | Notes |
+|-------|-----|-------------|-------------|-------|
+| 1K | 384 | ~11M | ~9% | Long sequences, slow training |
+| 4K | 320 | ~13M | ~19% | Good balance |
+| 8K | 288 | ~14M | ~29% | Sweet spot for this model size |
+| 32K | 192 | ~14M | ~53% | Embeddings dominate |
+
 ## Files
 
 | File | What it does |
