@@ -250,6 +250,13 @@ def train(
     compression = total_chars / len(train_tokens)
     print(f"Compression ratio: {compression:.2f} chars/token")
 
+    # Validation compression is what makes runs comparable: per-token loss is
+    # measured in a different unit for every tokenizer, so we convert it to
+    # bits per character, which is denominated in raw text and is identical
+    # across vocab sizes.
+    val_chars = sum(len(t) for t in val_texts)
+    val_compression = val_chars / len(val_tokens)
+
     # datasets
     train_ds = TextDataset(train_tokens, seq_len)
     val_ds = TextDataset(val_tokens, seq_len)
@@ -290,11 +297,15 @@ def train(
         "embedding_params": emb_params,
         "embedding_pct": emb_pct,
         "compression_ratio": compression,
+        "val_compression_ratio": val_compression,
         "train_tokens": len(train_tokens),
         "val_tokens": len(val_tokens),
         "train_losses": [],
         "val_losses": [],
         "val_perplexities": [],
+        "val_bits_per_char": [],
+        "tokens_per_sec": [],
+        "epoch_seconds": [],
     }
 
     for epoch in range(epochs):
@@ -336,13 +347,18 @@ def train(
 
         val_loss = val_loss / max(val_batches, 1)
         val_ppl = math.exp(min(val_loss, 20))
+        # nats/token -> nats/char -> bits/char
+        val_bpc = val_loss / (val_compression * math.log(2))
 
         metrics["train_losses"].append(train_loss)
         metrics["val_losses"].append(val_loss)
         metrics["val_perplexities"].append(val_ppl)
+        metrics["val_bits_per_char"].append(val_bpc)
+        metrics["tokens_per_sec"].append(tokens_per_sec)
+        metrics["epoch_seconds"].append(elapsed)
 
         print(f"  Epoch {epoch+1}: train_loss={train_loss:.3f} val_loss={val_loss:.3f} "
-              f"val_ppl={val_ppl:.1f} ({elapsed:.0f}s, {tokens_per_sec:.0f} tok/s)")
+              f"val_ppl={val_ppl:.1f} bpc={val_bpc:.3f} ({elapsed:.0f}s, {tokens_per_sec:.0f} tok/s)")
 
     # save checkpoint
     ckpt_path = os.path.join(save_dir, f"model_v{vocab_size}.pt")
