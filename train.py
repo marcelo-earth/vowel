@@ -191,12 +191,17 @@ def train_tokenizer(texts, vocab_size, save_path, limit_alphabet=256):
     tokenizer.train_from_iterator(texts, trainer)
 
     actual = tokenizer.get_vocab_size()
-    if actual != vocab_size:
+    if actual > vocab_size:
+        # the failure this guards: the initial alphabet exceeds the budget, so
+        # the vocab silently overshoots and holds almost no merges
         raise ValueError(
             f"Tokenizer built {actual} tokens but {vocab_size} were requested. "
             f"Lower limit_alphabet (currently {limit_alphabet}) so the initial "
             f"alphabet fits inside the vocab budget."
         )
+    if actual < vocab_size:
+        # legitimate on a small corpus: there are not enough merges to find
+        print(f"  note: corpus only supports {actual} of {vocab_size} requested tokens")
 
     tokenizer.save(save_path)
     print(f"Tokenizer saved to {save_path} (vocab size: {actual})")
