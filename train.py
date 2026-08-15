@@ -37,16 +37,24 @@ def set_seed(seed):
 class TextDataset(Dataset):
     """Tokenized text dataset for language modeling."""
 
-    def __init__(self, tokens, seq_len):
+    def __init__(self, tokens, seq_len, stride=None):
+        # stride defaults to seq_len (non-overlapping windows). Stride 1 would
+        # emit one sample per token, showing the model the same text seq_len
+        # times per epoch for no extra signal.
         self.tokens = tokens
         self.seq_len = seq_len
+        self.stride = stride or seq_len
 
     def __len__(self):
-        return max(0, len(self.tokens) - self.seq_len - 1)
+        usable = len(self.tokens) - self.seq_len - 1
+        if usable < 0:
+            return 0
+        return usable // self.stride + 1
 
     def __getitem__(self, idx):
-        x = self.tokens[idx : idx + self.seq_len]
-        y = self.tokens[idx + 1 : idx + self.seq_len + 1]
+        start = idx * self.stride
+        x = self.tokens[start : start + self.seq_len]
+        y = self.tokens[start + 1 : start + self.seq_len + 1]
         return torch.tensor(x, dtype=torch.long), torch.tensor(y, dtype=torch.long)
 
 
