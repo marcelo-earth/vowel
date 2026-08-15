@@ -19,6 +19,13 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 
+SAMPLE_PROMPTS = [
+    "The history of",
+    "In the early 20th century",
+    "Scientists discovered that",
+]
+
+
 def set_seed(seed):
     """Seed every RNG that affects a run so vocab sizes are compared fairly."""
     random.seed(seed)
@@ -94,6 +101,34 @@ class TinyGPT(nn.Module):
 
     def count_embedding_params(self):
         return self.tok_emb.weight.numel()
+
+
+@torch.no_grad()
+def generate(model, tokenizer, prompt, max_new_tokens=60, temperature=0.8, top_k=40, device=None):
+    """Sample a continuation of `prompt` from a trained model."""
+    if device is None:
+        device = next(model.parameters()).device
+
+    model.eval()
+    ids = tokenizer.encode(prompt).ids
+    if not ids:
+        raise ValueError("Prompt tokenized to zero tokens")
+
+    for _ in range(max_new_tokens):
+        # the model only has positional embeddings up to seq_len
+        context = ids[-model.seq_len:]
+        x = torch.tensor([context], dtype=torch.long, device=device)
+        logits = model(x)[0, -1] / max(temperature, 1e-6)
+
+        if top_k:
+            k = min(top_k, logits.size(-1))
+            kth = torch.topk(logits, k).values[-1]
+            logits = logits.masked_fill(logits < kth, float("-inf"))
+
+        probs = F.softmax(logits, dim=-1)
+        ids.append(int(torch.multinomial(probs, num_samples=1)))
+
+    return tokenizer.decode(ids)
 
 
 def get_model_config(vocab_size, target_params=15_000_000):
@@ -305,6 +340,14 @@ def train(
     ckpt_path = os.path.join(save_dir, f"model_v{vocab_size}.pt")
     torch.save(model.state_dict(), ckpt_path)
     print(f"Model saved to {ckpt_path}")
+
+    # sample generations, so generation quality can be compared across vocab sizes
+    metrics["samples"] = []
+    print("\nSamples:")
+    for prompt in SAMPLE_PROMPTS:
+        text = generate(model, tokenizer, prompt, device=device)
+        metrics["samples"].append({"prompt": prompt, "text": text})
+        print(f"  [{prompt}] {text}")
 
     return metrics
 
