@@ -3,8 +3,10 @@
 import argparse
 import math
 import os
+import random
 import time
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,6 +17,14 @@ from tokenizers.trainers import BpeTrainer
 from tokenizers.pre_tokenizers import Whitespace
 from datasets import load_dataset
 from tqdm import tqdm
+
+
+def set_seed(seed):
+    """Seed every RNG that affects a run so vocab sizes are compared fairly."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 class TextDataset(Dataset):
@@ -157,14 +167,17 @@ def train(
     max_val_samples=5000,
     device=None,
     save_dir="checkpoints",
+    seed=42,
 ):
     """Train a small GPT and return metrics."""
+    set_seed(seed)
+
     if device is None:
         device = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
 
     print(f"\n{'='*60}")
     print(f"Training with vocab_size={vocab_size}")
-    print(f"Device: {device}")
+    print(f"Device: {device} | seed: {seed}")
     print(f"{'='*60}")
 
     # load data
@@ -226,6 +239,7 @@ def train(
     metrics = {
         "vocab_size": vocab_size,
         "actual_vocab": actual_vocab,
+        "seed": seed,
         "dim": config["dim"],
         "n_heads": config["n_heads"],
         "n_layers": config["n_layers"],
@@ -304,6 +318,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
     parser.add_argument("--max-train-samples", type=int, default=50000, help="Max training texts")
     parser.add_argument("--device", type=str, default=None, help="Device (cpu/cuda/mps)")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
     train(
@@ -314,4 +329,5 @@ if __name__ == "__main__":
         lr=args.lr,
         max_train_samples=args.max_train_samples,
         device=args.device,
+        seed=args.seed,
     )
