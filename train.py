@@ -139,30 +139,35 @@ def generate(model, tokenizer, prompt, max_new_tokens=60, temperature=0.8, top_k
     return tokenizer.decode(ids)
 
 
-def get_model_config(vocab_size, target_params=15_000_000):
-    """Scale model dims to keep total params roughly constant across vocab sizes.
+def estimate_params(vocab_size, dim, n_layers, seq_len):
+    """Exact parameter count for TinyGPT, without building the model.
 
-    With weight tying, embedding params = vocab_size * dim.
-    We want total params ~ target_params regardless of vocab_size.
+    Weight tying makes head.weight the same tensor as tok_emb.weight, so the
+    embedding table is counted once. Per layer: attention in_proj (3*dim^2+3*dim)
+    and out_proj (dim^2+dim), two FFN projections (8*dim^2+5*dim), two norms
+    (4*dim) -- 12*dim^2 + 13*dim in total.
     """
-    # start with a reasonable dim and adjust
-    # rough formula: total ~ vocab*dim + n_layers*(12*dim^2) + vocab*dim (tied)
-    # simplified: total ~ 2*vocab*dim + n_layers*12*dim^2
+    emb = vocab_size * dim + seq_len * dim
+    layers = n_layers * (12 * dim * dim + 13 * dim)
+    return emb + layers + 2 * dim  # + final LayerNorm
 
-    # hand-tuned so total params land around 15M for each vocab size
-    # bigger vocab -> smaller dim to compensate
-    configs = {
-        1000: {"dim": 384, "n_heads": 6, "n_layers": 6},   # ~11M params
-        4000: {"dim": 320, "n_heads": 8, "n_layers": 6},    # ~13M params
-        8000: {"dim": 288, "n_heads": 6, "n_layers": 6},    # ~14M params
-        32000: {"dim": 192, "n_heads": 6, "n_layers": 6},   # ~14M params
-    }
 
-    if vocab_size in configs:
-        return configs[vocab_size]
+def get_model_config(vocab_size, target_params=15_000_000, seq_len=256,
+                     n_heads=6, n_layers=6):
+    """Pick dim so total params land on target_params for any vocab size.
 
-    # fallback: pick dim=256 and 6 layers
-    return {"dim": 256, "n_heads": 8, "n_layers": 6}
+    A bigger vocab spends more of the budget on the embedding table, so dim
+    shrinks to compensate. Solved numerically rather than hand-tuned, because
+    hand-tuned values drifted up to 33% apart, which confounds the comparison.
+    """
+    # dim must divide evenly into the attention heads
+    best = None
+    for dim in range(n_heads, 2048 + 1, n_heads):
+        diff = abs(estimate_params(vocab_size, dim, n_layers, seq_len) - target_params)
+        if best is None or diff < best[1]:
+            best = (dim, diff)
+
+    return {"dim": best[0], "n_heads": n_heads, "n_layers": n_layers}
 
 
 def train_tokenizer(texts, vocab_size, save_path, limit_alphabet=256):
