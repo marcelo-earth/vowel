@@ -165,8 +165,14 @@ def get_model_config(vocab_size, target_params=15_000_000):
     return {"dim": 256, "n_heads": 8, "n_layers": 6}
 
 
-def train_tokenizer(texts, vocab_size, save_path):
-    """Train a BPE tokenizer on the given texts."""
+def train_tokenizer(texts, vocab_size, save_path, limit_alphabet=256):
+    """Train a BPE tokenizer on the given texts.
+
+    limit_alphabet caps the initial single-character vocabulary. WikiText's raw
+    alphabet is ~1600 symbols, so without this a small vocab_size is silently
+    overshot and spends its whole budget on characters, leaving no room for
+    merges (a "1K vocab" came out at 1629 tokens and 1.24 chars/token).
+    """
     tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
     tokenizer.pre_tokenizer = Whitespace()
 
@@ -174,11 +180,21 @@ def train_tokenizer(texts, vocab_size, save_path):
         vocab_size=vocab_size,
         special_tokens=["[UNK]", "[PAD]", "[BOS]", "[EOS]"],
         min_frequency=2,
+        limit_alphabet=limit_alphabet,
     )
 
     tokenizer.train_from_iterator(texts, trainer)
+
+    actual = tokenizer.get_vocab_size()
+    if actual != vocab_size:
+        raise ValueError(
+            f"Tokenizer built {actual} tokens but {vocab_size} were requested. "
+            f"Lower limit_alphabet (currently {limit_alphabet}) so the initial "
+            f"alphabet fits inside the vocab budget."
+        )
+
     tokenizer.save(save_path)
-    print(f"Tokenizer saved to {save_path} (vocab size: {tokenizer.get_vocab_size()})")
+    print(f"Tokenizer saved to {save_path} (vocab size: {actual})")
     return tokenizer
 
 
@@ -235,6 +251,11 @@ def train(
     if os.path.exists(tok_path):
         print(f"Loading existing tokenizer from {tok_path}")
         tokenizer = Tokenizer.from_file(tok_path)
+        if tokenizer.get_vocab_size() != vocab_size:
+            # a cached tokenizer from before the limit_alphabet fix
+            print(f"  cached tokenizer has {tokenizer.get_vocab_size()} tokens, "
+                  f"expected {vocab_size} -- retraining")
+            tokenizer = train_tokenizer(train_texts, vocab_size, tok_path)
     else:
         print(f"Training tokenizer with vocab_size={vocab_size}...")
         tokenizer = train_tokenizer(train_texts, vocab_size, tok_path)
