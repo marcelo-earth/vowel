@@ -1,0 +1,238 @@
+[
+  {
+    "vocab_size": 1000,
+    "actual_vocab": 1000,
+    "seed": 42,
+    "dim": 450,
+    "n_heads": 6,
+    "n_layers": 6,
+    "total_params": 15181200,
+    "embedding_params": 450000,
+    "embedding_pct": 2.9641925539483043,
+    "compression_ratio": 2.7323250658719993,
+    "val_compression_ratio": 2.7319120628484543,
+    "train_tokens": 12053680,
+    "val_tokens": 410384,
+    "train_losses": [
+      4.6035026794060165,
+      3.807608590168178,
+      3.571409723209249
+    ],
+    "val_losses": [
+      3.9181379079818726,
+      3.4843430662155153,
+      3.4072935819625854
+    ],
+    "val_perplexities": [
+      50.306681836839104,
+      32.60100337311777,
+      30.18344459839849
+    ],
+    "val_bits_per_char": [
+      2.0691288735958384,
+      1.840046219183088,
+      1.799357168336095
+    ],
+    "tokens_per_sec": [
+      9972.23770885847,
+      9099.422253575134,
+      10880.64419857788
+    ],
+    "epoch_seconds": [
+      1208.7060449123383,
+      1324.6449790000916,
+      1107.7932317256927
+    ],
+    "samples": [
+      {
+        "prompt": "The history of",
+        "text": "The hist ory of the L on don F ran k . The F ren ch P l ay St ation is descri bed the film as a \" st ory l ist ic \" and in the L or d St ation \" . The song rece ived mi x ed in a 200 1 \" S u per Mar io G a"
+      },
+      {
+        "prompt": "In the early 20th century",
+        "text": "In the early 20 th cent ury , M ah ah u h am i , and a s un d oc am ent ary serv ice were c arri ed in the cent ury . This was the pr act ice of L am u el P ir ates h am i \u0107 in the c ity . The new sp ap er is also in"
+      },
+      {
+        "prompt": "Scientists discovered that",
+        "text": "S ci ent ists dis cover ed that the game would not have been used to do not ex port ant in any time . Wh ile the game ' s develop ment , the game would not be used on the game play ers . The game was design ed at the game . The game play er would be released , they were \" h ost"
+      }
+    ]
+  },
+  {
+    "vocab_size": 4000,
+    "actual_vocab": 4000,
+    "seed": 42,
+    "dim": 426,
+    "n_heads": 6,
+    "n_layers": 6,
+    "total_params": 14913408,
+    "embedding_params": 1704000,
+    "embedding_pct": 11.425959780621572,
+    "compression_ratio": 3.67769710970679,
+    "val_compression_ratio": 3.7057592765206353,
+    "train_tokens": 8955216,
+    "val_tokens": 302538,
+    "train_losses": [
+      5.890823576718651,
+      5.109986458365675,
+      4.878093651861416
+    ],
+    "val_losses": [
+      5.255301780170864,
+      4.828150894906786,
+      4.7520543866687355
+    ],
+    "val_perplexities": [
+      191.57929196303235,
+      124.97964635782351,
+      115.8219834195527
+    ],
+    "val_bits_per_char": [
+      2.045949898760303,
+      1.8796551078961707,
+      1.8500298551822172
+    ],
+    "tokens_per_sec": [
+      10903.7134162484,
+      11207.129800810944,
+      11566.533816261855
+    ],
+    "epoch_seconds": [
+      821.2923119068146,
+      799.0570430755615,
+      774.2281432151794
+    ],
+    "samples": [
+      {
+        "prompt": "The history of",
+        "text": "The history of the H oc key M it es wick . The first three p are located in North Carolina and the first class ical in 2005 and the P ell s ( I D ) . The main state was also used in an am atic city of the D utch , and in 195 2 . The US C reg"
+      },
+      {
+        "prompt": "In the early 20th century",
+        "text": "In the early 20th century . The church was an inter nal in ity of the early 187 0s , with a group of a series of a non @-@ century , and the former language , was built on March 19 20 , and 19 24 . The first year was an im perial man ent ed by the United States in 194 1"
+      },
+      {
+        "prompt": "Scientists discovered that",
+        "text": "Sci ent ists discovered that the D S , and the D NA F estival received a series of the United States . The game featured a number of the \" L A \" from a \" C . The song debut ed the best on the Billboard Hot 100 and chart in the New Zealand chart , although it was released by the first"
+      }
+    ]
+  },
+  {
+    "vocab_size": 8000,
+    "actual_vocab": 8000,
+    "seed": 42,
+    "dim": 402,
+    "n_heads": 6,
+    "n_layers": 6,
+    "total_params": 14986560,
+    "embedding_params": 3216000,
+    "embedding_pct": 21.459227467811157,
+    "compression_ratio": 4.160658194739779,
+    "val_compression_ratio": 4.194020582304904,
+    "train_tokens": 7915712,
+    "val_tokens": 267317,
+    "train_losses": [
+      6.324287063093165,
+      5.550691222058567,
+      5.333963672566858
+    ],
+    "val_losses": [
+      5.69555076956749,
+      5.320003986358643,
+      5.2495265901088715
+    ],
+    "val_perplexities": [
+      297.5406247865712,
+      204.38469674204634,
+      190.47607385341985
+    ],
+    "val_bits_per_char": [
+      1.959204226382351,
+      1.8300204345709503,
+      1.805777017527815
+    ],
+    "tokens_per_sec": [
+      9895.200063543689,
+      8995.73830532042,
+      8841.12849224838
+    ],
+    "epoch_seconds": [
+      799.9353170394897,
+      879.9188828468323,
+      895.3065218925476
+    ],
+    "samples": [
+      {
+        "prompt": "The history of",
+        "text": "The history of the same season , the latter was not successful in the United States , the only one as the following five @-@ minute year . The fourth season in the United States to the 2004 history of the following year , it was the largest to be the first year . The first year , was a second @-@ class"
+      },
+      {
+        "prompt": "In the early 20th century",
+        "text": "In the early 20th century , and the second @-@ year . The two @-@ century version of the first two @-@ century , was first part of the first episode that was a member of the first series , and is called by the second single as \" A . S . \" by the episode , the band ' s third album was"
+      },
+      {
+        "prompt": "Scientists discovered that",
+        "text": "Sci ent ists discovered that the \" The P N I @-@ 8 was \" most important and not be a \" d itch \" . \" In 2012 , it was named by M @-@ M @-@ 47 @-@ 6 . \" The T ' t @-@ 3 / 6 @-@ 3 / s \" , \" the highest @-@ game was selected by"
+      }
+    ]
+  },
+  {
+    "vocab_size": 32000,
+    "actual_vocab": 32000,
+    "seed": 42,
+    "dim": 282,
+    "n_heads": 6,
+    "n_layers": 6,
+    "total_params": 14844480,
+    "embedding_params": 9024000,
+    "embedding_pct": 60.790273556231,
+    "compression_ratio": 4.911953854028585,
+    "val_compression_ratio": 4.871589531453004,
+    "train_tokens": 6704984,
+    "val_tokens": 230137,
+    "train_losses": [
+      6.9866142366218105,
+      6.167206235503218,
+      5.939175540485708
+    ],
+    "val_losses": [
+      6.387713687760489,
+      5.984638145991734,
+      5.921047857829502
+    ],
+    "val_perplexities": [
+      594.495821648512,
+      397.27873833284355,
+      372.8021529329517
+    ],
+    "val_bits_per_char": [
+      1.891687056237265,
+      1.772318402236571,
+      1.7534864803786168
+    ],
+    "tokens_per_sec": [
+      1108.323095178894,
+      1805.508413607314,
+      1573.2239782938386
+    ],
+    "epoch_seconds": [
+      6049.586108207703,
+      3713.577820777893,
+      4261.882664203644
+    ],
+    "samples": [
+      {
+        "prompt": "The history of",
+        "text": "The history of June 2014 , although the second point was the game , which had been a result of the band . The time , the game was the new video film ' s character and , though the film was not the game . The song is a \" of the film ' s film . The album was the game"
+      },
+      {
+        "prompt": "In the early 20th century",
+        "text": "In the early 20th century , although the American century which was a important player in a number of the U . No . the second single also were the single of the country in July 2009 , the \" , but the United States was sold in the North Nations \" . It is in the album to the track for an single ,"
+      },
+      {
+        "prompt": "Scientists discovered that",
+        "text": "Scient ists discovered that she would be done by the time . In a career , with a three @-@ day , and a number of the club is a career with a second season . As a second team , he had the final goal of the team , he led as a number of the next York season . His match was"
+      }
+    ]
+  }
+]
