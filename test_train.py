@@ -20,7 +20,7 @@ from train import (
     set_seed,
     tokenize_texts,
     train_tokenizer,
-    window_target_chars,
+    window_target_bytes,
 )
 
 
@@ -91,7 +91,8 @@ def test_tokenizer_is_lossless_and_honors_vocab(tmp_path="/tmp/vowel_tok_test.js
 
     ids, lens = tokenize_texts(tok, [text, "abc def"])
     assert len(ids) == len(lens)
-    assert sum(lens) == len(text) + len("abc def")  # offsets cover the raw text
+    # token bytes cover the raw UTF-8 exactly, multi-byte characters included
+    assert sum(lens) == len(text.encode("utf-8")) + len("abc def")
 
     # a vocab below the 256 byte alphabet must raise, never overshoot silently
     try:
@@ -102,24 +103,24 @@ def test_tokenizer_is_lossless_and_honors_vocab(tmp_path="/tmp/vowel_tok_test.js
         raise AssertionError("expected ValueError for vocab below the byte alphabet")
 
 
-def test_window_target_chars_matches_dataset_targets():
-    """The bpc denominator must cover exactly the targets the loss was taken on."""
-    char_lens = [(i % 5) + 1 for i in range(1000)]
+def test_window_target_bytes_matches_dataset_targets():
+    """The bits per byte denominator must cover exactly the targets the loss was taken on."""
+    byte_lens = [(i % 5) + 1 for i in range(1000)]
     ds = TextDataset(list(range(1000)), seq_len=10)
-    expected = sum(char_lens[int(t)] for i in range(len(ds)) for t in ds[i][1])
-    assert window_target_chars(char_lens, 10) == expected
+    expected = sum(byte_lens[int(t)] for i in range(len(ds)) for t in ds[i][1])
+    assert window_target_bytes(byte_lens, 10) == expected
 
 
-def test_evaluate_bits_per_char_is_exact():
-    """bpc = summed nll / (chars covered * ln 2), over the same windows."""
+def test_evaluate_bits_per_byte_is_exact():
+    """bpb = summed nll / (bytes covered * ln 2), over the same windows."""
     set_seed(0)
     vocab, seq_len = 50, 8
     model = TinyGPT(vocab, 16, 2, 1, seq_len)
     tokens = [i % vocab for i in range(100)]
-    char_lens = [2] * 100
-    loss, bpc, n_tokens, chars = evaluate(model, tokens, char_lens, seq_len, 4, "cpu")
-    assert chars == 2 * n_tokens
-    assert abs(bpc - loss / (2 * math.log(2))) < 1e-9
+    byte_lens = [2] * 100
+    loss, bpb, n_tokens, n_bytes = evaluate(model, tokens, byte_lens, seq_len, 4, "cpu")
+    assert n_bytes == 2 * n_tokens
+    assert abs(bpb - loss / (2 * math.log(2))) < 1e-9
 
 
 def test_generate_handles_prompt_longer_than_context():

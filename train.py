@@ -218,38 +218,40 @@ def load_wikitext(split="train", max_samples=None):
 
 
 def tokenize_texts(tokenizer, texts):
-    """Tokenize texts into a flat id list and the characters each token covers.
+    """Tokenize texts into a flat id list and the UTF-8 bytes each token covers.
 
-    The char lengths come from the encoder's offsets. They must add up to the
-    raw text length, otherwise bits per character would not be over the same
+    A byte-level token is a string with one symbol per byte, so its length is
+    its byte count. Character offsets do not work: a multi-byte character split
+    across tokens would be counted once per token. The byte lengths must add up
+    to the raw text size, otherwise bits per byte would not be over the same
     text for every tokenizer.
     """
-    ids, char_lens = [], []
+    ids, byte_lens = [], []
     for text in texts:
         enc = tokenizer.encode(text)
-        lens = [end - start for start, end in enc.offsets]
-        assert sum(lens) == len(text), "token offsets must cover the raw text exactly"
+        lens = [len(tokenizer.id_to_token(i)) for i in enc.ids]
+        assert sum(lens) == len(text.encode("utf-8")), "token bytes must cover the raw text exactly"
         ids.extend(enc.ids)
-        char_lens.extend(lens)
-    return ids, char_lens
+        byte_lens.extend(lens)
+    return ids, byte_lens
 
 
-def window_target_chars(char_lens, seq_len, stride=None):
-    """Characters covered by the targets of every window of a TextDataset."""
+def window_target_bytes(byte_lens, seq_len, stride=None):
+    """Bytes covered by the targets of every window of a TextDataset."""
     stride = stride or seq_len
-    usable = len(char_lens) - seq_len - 1
+    usable = len(byte_lens) - seq_len - 1
     n = 0 if usable < 0 else usable // stride + 1
-    csum = np.concatenate([[0], np.cumsum(char_lens)])
+    csum = np.concatenate([[0], np.cumsum(byte_lens)])
     starts = np.arange(n) * stride
     return int((csum[starts + seq_len + 1] - csum[starts + 1]).sum())
 
 
 @torch.no_grad()
-def evaluate(model, tokens, char_lens, seq_len, batch_size, device):
-    """Exact validation loss and bits per character over every window.
+def evaluate(model, tokens, byte_lens, seq_len, batch_size, device):
+    """Exact validation loss and bits per byte over every window.
 
-    No drop_last: the summed negative log likelihood and the characters it
-    covers come from the same windows, so the ratio is a true bits per char.
+    No drop_last: the summed negative log likelihood and the bytes it covers
+    come from the same windows, so the ratio is a true bits per byte.
     """
     model.eval()
     ds = TextDataset(tokens, seq_len)
@@ -261,10 +263,10 @@ def evaluate(model, tokens, char_lens, seq_len, batch_size, device):
         nll = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1), reduction="sum")
         total_nll += nll.item()
         n_tokens += y.numel()
-    chars = window_target_chars(char_lens, seq_len)
+    n_bytes = window_target_bytes(byte_lens, seq_len)
     val_loss = total_nll / max(n_tokens, 1)
-    bpc = total_nll / (max(chars, 1) * math.log(2))
-    return val_loss, bpc, n_tokens, chars
+    bpb = total_nll / (max(n_bytes, 1) * math.log(2))
+    return val_loss, bpb, n_tokens, n_bytes
 
 
 def train(
@@ -314,7 +316,7 @@ def train(
     # tokenize
     print("Tokenizing...")
     train_tokens, _ = tokenize_texts(tokenizer, train_texts)
-    val_tokens, val_char_lens = tokenize_texts(tokenizer, val_texts)
+    val_tokens, val_byte_lens = tokenize_texts(tokenizer, val_texts)
     print(f"Train tokens: {len(train_tokens):,}, Val tokens: {len(val_tokens):,}")
 
     # compute compression ratio
@@ -325,6 +327,7 @@ def train(
     # Per-token loss is in a different unit for every tokenizer, so evaluate()
     # converts it to bits per character over the same raw validation text.
     val_chars = sum(len(t) for t in val_texts)
+    val_bytes = sum(len(t.encode("utf-8")) for t in val_texts)
     val_compression = val_chars / len(val_tokens)
 
     # datasets
@@ -367,8 +370,9 @@ def train(
         "compression_ratio": compression,
         "val_compression_ratio": val_compression,
         "val_eval_tokens": None,
-        "val_eval_chars": None,
-        "metric_version": "bytelevel-exact-v2",
+        "val_eval_bytes": None,
+        "val_bits_per_byte": [],
+        "metric_version": "bytelevel-bytes-exact-v2",
         "train_tokens": len(train_tokens),
         "val_tokens": len(val_tokens),
         "train_losses": [],
@@ -405,9 +409,11 @@ def train(
         tokens_per_sec = len(train_ds) * seq_len / elapsed
 
         # validate on every window, with the exact characters those windows cover
-        val_loss, val_bpc, val_n_tokens, val_n_chars = evaluate(
-            model, val_tokens, val_char_lens, seq_len, batch_size, device
+        val_loss, val_bpb, val_n_tokens, val_n_bytes = evaluate(
+            model, val_tokens, val_byte_lens, seq_len, batch_size, device
         )
+        # same constant for every tokenizer, so it rescales without reordering
+        val_bpc = val_bpb * val_bytes / val_chars
         val_ppl = math.exp(min(val_loss, 20))
 
         metrics["train_losses"].append(train_loss)
@@ -415,12 +421,13 @@ def train(
         metrics["val_perplexities"].append(val_ppl)
         metrics["val_bits_per_char"].append(val_bpc)
         metrics["val_eval_tokens"] = val_n_tokens
-        metrics["val_eval_chars"] = val_n_chars
+        metrics["val_eval_bytes"] = val_n_bytes
+        metrics["val_bits_per_byte"].append(val_bpb)
         metrics["tokens_per_sec"].append(tokens_per_sec)
         metrics["epoch_seconds"].append(elapsed)
 
         print(f"  Epoch {epoch+1}: train_loss={train_loss:.3f} val_loss={val_loss:.3f} "
-              f"val_ppl={val_ppl:.1f} bpc={val_bpc:.3f} ({elapsed:.0f}s, {tokens_per_sec:.0f} tok/s)")
+              f"val_ppl={val_ppl:.1f} bpb={val_bpb:.3f} bpc={val_bpc:.3f} ({elapsed:.0f}s, {tokens_per_sec:.0f} tok/s)")
 
     # save checkpoint
     ckpt_path = os.path.join(save_dir, f"model_bl_v{vocab_size}_s{seed}.pt")
