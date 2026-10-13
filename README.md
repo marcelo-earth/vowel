@@ -27,9 +27,25 @@ an identical denominator. Perplexity is still recorded, but not ranked on.
 
 ## Status
 
-The sweep is being re-run. Earlier versions of this README listed results that
-were never actually produced by a training run, so they have been removed rather
-than left to look measured. Real numbers go here once `run_sweep.py` finishes.
+First sweep complete: 4 vocab sizes, 1 seed (42), 3 epochs, about 15M params each
+(`results.json`). Earlier versions of this README listed results that were never
+produced by a training run; these numbers come from `run_sweep.py`.
+
+| Vocab | dim | Params | Embedding share | Chars/token | Val bits/char (epoch 3) |
+|------:|----:|-------:|----------------:|------------:|------------------------:|
+| 1,000 | 450 | 15.18M | 3.0% | 2.73 | 1.799 |
+| 4,000 | 426 | 14.91M | 11.4% | 3.71 | 1.850 |
+| 8,000 | 402 | 14.99M | 21.5% | 4.19 | 1.806 |
+| 32,000 | 282 | 14.84M | 60.8% | 4.87 | 1.753 |
+
+One seed is exploratory: the 1K to 8K differences (0.05 bits/char) cannot be told
+apart from seed noise yet. Known limits before this is a result:
+
+- The `Whitespace` pre-tokenizer drops spaces, so the model never predicts them
+  but the bits/char denominator counts them. Fix before comparing tokenizers.
+- Validation loss uses `drop_last` windows while the denominator counts all
+  validation characters.
+- Needs 5 sizes by 3 seeds with a pre-registered rule for seed variance.
 
 ## Setup
 
