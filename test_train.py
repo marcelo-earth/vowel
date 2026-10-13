@@ -16,8 +16,11 @@ from train import (
     estimate_params,
     generate,
     get_model_config,
+    evaluate,
     set_seed,
+    tokenize_texts,
     train_tokenizer,
+    window_target_chars,
 )
 
 
@@ -77,43 +80,52 @@ def test_seeding_is_deterministic():
     assert not torch.equal(a, c)
 
 
-def test_bits_per_char_conversion():
-    """bpc is the only cross-tokenizer comparable metric. See issue #7."""
-    val_loss, chars_per_token = 4.0, 2.5
-    bpc = val_loss / (chars_per_token * math.log(2))
+def test_tokenizer_is_lossless_and_honors_vocab(tmp_path="/tmp/vowel_tok_test.json"):
+    """Whitespace pre-tokenization dropped spaces while bpc still counted them."""
+    corpus = ["Hello  world, it's a test.\nNew line \u00e9\u4e2d " * 3] * 50
+    tok = train_tokenizer(corpus, vocab_size=300, save_path=tmp_path)
+    assert tok.get_vocab_size() <= 300
 
-    # a loss of ln(2) nats/token at 1 char/token is exactly 1 bit/char
-    assert abs(math.log(2) / (1.0 * math.log(2)) - 1.0) < 1e-12
+    text = "Hello  world, it's a test.\nNew line \u00e9\u4e2d "
+    assert tok.decode(tok.encode(text).ids) == text  # spaces and newlines survive
 
-    # better compression at equal per-token loss means fewer bits per char
-    worse = val_loss / (1.25 * math.log(2))
-    assert bpc < worse
+    ids, lens = tokenize_texts(tok, [text, "abc def"])
+    assert len(ids) == len(lens)
+    assert sum(lens) == len(text) + len("abc def")  # offsets cover the raw text
 
-
-def test_tokenizer_never_overshoots_requested_vocab(tmp_path="/tmp/vowel_tok_test.json"):
-    """BPE silently overshot 1000 -> 1629 on WikiText's alphabet. See issue #8."""
-    # a corpus with a deliberately wide alphabet, as WikiText-103 raw has
-    wide = "".join(chr(0x4E00 + i) for i in range(800))
-    corpus = [" ".join(wide[i : i + 4] for i in range(0, len(wide), 4))] * 5
-
-    # capped alphabet: the budget is honoured
-    tok = train_tokenizer(corpus, vocab_size=500, save_path=tmp_path, limit_alphabet=200)
-    assert tok.get_vocab_size() <= 500, tok.get_vocab_size()
-
-    # uncapped, the 800-symbol alphabet would blow past the 500 budget, which
-    # must raise rather than quietly return an oversized vocab
+    # a vocab below the 256 byte alphabet must raise, never overshoot silently
     try:
-        train_tokenizer(corpus, vocab_size=500, save_path=tmp_path, limit_alphabet=1000)
+        train_tokenizer(corpus, vocab_size=100, save_path=tmp_path)
     except ValueError:
         pass
     else:
-        raise AssertionError("expected ValueError when alphabet exceeds vocab budget")
+        raise AssertionError("expected ValueError for vocab below the byte alphabet")
+
+
+def test_window_target_chars_matches_dataset_targets():
+    """The bpc denominator must cover exactly the targets the loss was taken on."""
+    char_lens = [(i % 5) + 1 for i in range(1000)]
+    ds = TextDataset(list(range(1000)), seq_len=10)
+    expected = sum(char_lens[int(t)] for i in range(len(ds)) for t in ds[i][1])
+    assert window_target_chars(char_lens, 10) == expected
+
+
+def test_evaluate_bits_per_char_is_exact():
+    """bpc = summed nll / (chars covered * ln 2), over the same windows."""
+    set_seed(0)
+    vocab, seq_len = 50, 8
+    model = TinyGPT(vocab, 16, 2, 1, seq_len)
+    tokens = [i % vocab for i in range(100)]
+    char_lens = [2] * 100
+    loss, bpc, n_tokens, chars = evaluate(model, tokens, char_lens, seq_len, 4, "cpu")
+    assert chars == 2 * n_tokens
+    assert abs(bpc - loss / (2 * math.log(2))) < 1e-9
 
 
 def test_generate_handles_prompt_longer_than_context():
     """pos_emb only has seq_len rows, so a long prompt would index out of range."""
     corpus = ["the quick brown fox jumps over the lazy dog " * 40]
-    tok = train_tokenizer(corpus, vocab_size=60, save_path="/tmp/vowel_gen_test.json")
+    tok = train_tokenizer(corpus, vocab_size=300, save_path="/tmp/vowel_gen_test.json")
 
     set_seed(0)
     model = TinyGPT(tok.get_vocab_size(), 32, 4, 2, seq_len=16)
