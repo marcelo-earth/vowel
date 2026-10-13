@@ -14,7 +14,7 @@ from torch.utils.data import Dataset, DataLoader
 from tokenizers import Tokenizer
 from tokenizers.models import BPE
 from tokenizers.trainers import BpeTrainer
-from tokenizers.pre_tokenizers import Whitespace
+from tokenizers import decoders, pre_tokenizers, processors
 from datasets import load_dataset
 from tqdm import tqdm
 
@@ -170,34 +170,34 @@ def get_model_config(vocab_size, target_params=15_000_000, seq_len=256,
     return {"dim": best[0], "n_heads": n_heads, "n_layers": n_layers}
 
 
-def train_tokenizer(texts, vocab_size, save_path, limit_alphabet=256):
-    """Train a BPE tokenizer on the given texts.
+def train_tokenizer(texts, vocab_size, save_path):
+    """Train a lossless byte-level BPE tokenizer on the given texts.
 
-    limit_alphabet caps the initial single-character vocabulary. WikiText's raw
-    alphabet is ~1600 symbols, so without this a small vocab_size is silently
-    overshot and spends its whole budget on characters, leaving no room for
-    merges (a "1K vocab" came out at 1629 tokens and 1.24 chars/token).
+    Byte-level pre-tokenization keeps every space and newline inside the tokens,
+    so decode(encode(text)) == text and bits per character is denominated in
+    the full raw text. The old Whitespace pre-tokenizer dropped spaces: the
+    model never had to predict them, yet the denominator counted them.
+    The initial alphabet is the 256 bytes, so any vocab_size >= 260 is honored.
     """
     tokenizer = Tokenizer(BPE(unk_token="[UNK]"))
-    tokenizer.pre_tokenizer = Whitespace()
+    tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+    tokenizer.decoder = decoders.ByteLevel()
+    tokenizer.post_processor = processors.ByteLevel(trim_offsets=False)
 
     trainer = BpeTrainer(
         vocab_size=vocab_size,
         special_tokens=["[UNK]", "[PAD]", "[BOS]", "[EOS]"],
         min_frequency=2,
-        limit_alphabet=limit_alphabet,
+        initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
     )
 
     tokenizer.train_from_iterator(texts, trainer)
 
     actual = tokenizer.get_vocab_size()
     if actual > vocab_size:
-        # the failure this guards: the initial alphabet exceeds the budget, so
-        # the vocab silently overshoots and holds almost no merges
         raise ValueError(
-            f"Tokenizer built {actual} tokens but {vocab_size} were requested. "
-            f"Lower limit_alphabet (currently {limit_alphabet}) so the initial "
-            f"alphabet fits inside the vocab budget."
+            f"Tokenizer built {actual} tokens but {vocab_size} were requested; "
+            f"the 256 byte alphabet plus specials needs vocab_size >= 260."
         )
     if actual < vocab_size:
         # legitimate on a small corpus: there are not enough merges to find
@@ -218,12 +218,53 @@ def load_wikitext(split="train", max_samples=None):
 
 
 def tokenize_texts(tokenizer, texts):
-    """Tokenize a list of texts and return flat token list."""
-    all_tokens = []
+    """Tokenize texts into a flat id list and the characters each token covers.
+
+    The char lengths come from the encoder's offsets. They must add up to the
+    raw text length, otherwise bits per character would not be over the same
+    text for every tokenizer.
+    """
+    ids, char_lens = [], []
     for text in texts:
-        encoded = tokenizer.encode(text)
-        all_tokens.extend(encoded.ids)
-    return all_tokens
+        enc = tokenizer.encode(text)
+        lens = [end - start for start, end in enc.offsets]
+        assert sum(lens) == len(text), "token offsets must cover the raw text exactly"
+        ids.extend(enc.ids)
+        char_lens.extend(lens)
+    return ids, char_lens
+
+
+def window_target_chars(char_lens, seq_len, stride=None):
+    """Characters covered by the targets of every window of a TextDataset."""
+    stride = stride or seq_len
+    usable = len(char_lens) - seq_len - 1
+    n = 0 if usable < 0 else usable // stride + 1
+    csum = np.concatenate([[0], np.cumsum(char_lens)])
+    starts = np.arange(n) * stride
+    return int((csum[starts + seq_len + 1] - csum[starts + 1]).sum())
+
+
+@torch.no_grad()
+def evaluate(model, tokens, char_lens, seq_len, batch_size, device):
+    """Exact validation loss and bits per character over every window.
+
+    No drop_last: the summed negative log likelihood and the characters it
+    covers come from the same windows, so the ratio is a true bits per char.
+    """
+    model.eval()
+    ds = TextDataset(tokens, seq_len)
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=False, drop_last=False)
+    total_nll, n_tokens = 0.0, 0
+    for x, y in loader:
+        x, y = x.to(device), y.to(device)
+        logits = model(x)
+        nll = F.cross_entropy(logits.view(-1, logits.size(-1)), y.view(-1), reduction="sum")
+        total_nll += nll.item()
+        n_tokens += y.numel()
+    chars = window_target_chars(char_lens, seq_len)
+    val_loss = total_nll / max(n_tokens, 1)
+    bpc = total_nll / (max(chars, 1) * math.log(2))
+    return val_loss, bpc, n_tokens, chars
 
 
 def train(
@@ -257,12 +298,12 @@ def train(
 
     # train tokenizer
     os.makedirs(save_dir, exist_ok=True)
-    tok_path = os.path.join(save_dir, f"tokenizer_v{vocab_size}.json")
+    tok_path = os.path.join(save_dir, f"tokenizer_bl_v{vocab_size}.json")
     if os.path.exists(tok_path):
         print(f"Loading existing tokenizer from {tok_path}")
         tokenizer = Tokenizer.from_file(tok_path)
         if tokenizer.get_vocab_size() != vocab_size:
-            # a cached tokenizer from before the limit_alphabet fix
+            # a stale cached tokenizer
             print(f"  cached tokenizer has {tokenizer.get_vocab_size()} tokens, "
                   f"expected {vocab_size} -- retraining")
             tokenizer = train_tokenizer(train_texts, vocab_size, tok_path)
@@ -272,8 +313,8 @@ def train(
 
     # tokenize
     print("Tokenizing...")
-    train_tokens = tokenize_texts(tokenizer, train_texts)
-    val_tokens = tokenize_texts(tokenizer, val_texts)
+    train_tokens, _ = tokenize_texts(tokenizer, train_texts)
+    val_tokens, val_char_lens = tokenize_texts(tokenizer, val_texts)
     print(f"Train tokens: {len(train_tokens):,}, Val tokens: {len(val_tokens):,}")
 
     # compute compression ratio
@@ -281,18 +322,14 @@ def train(
     compression = total_chars / len(train_tokens)
     print(f"Compression ratio: {compression:.2f} chars/token")
 
-    # Validation compression is what makes runs comparable: per-token loss is
-    # measured in a different unit for every tokenizer, so we convert it to
-    # bits per character, which is denominated in raw text and is identical
-    # across vocab sizes.
+    # Per-token loss is in a different unit for every tokenizer, so evaluate()
+    # converts it to bits per character over the same raw validation text.
     val_chars = sum(len(t) for t in val_texts)
     val_compression = val_chars / len(val_tokens)
 
     # datasets
     train_ds = TextDataset(train_tokens, seq_len)
-    val_ds = TextDataset(val_tokens, seq_len)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, drop_last=True)
 
     # model
     config = get_model_config(vocab_size)
@@ -329,6 +366,9 @@ def train(
         "embedding_pct": emb_pct,
         "compression_ratio": compression,
         "val_compression_ratio": val_compression,
+        "val_eval_tokens": None,
+        "val_eval_chars": None,
+        "metric_version": "bytelevel-exact-v2",
         "train_tokens": len(train_tokens),
         "val_tokens": len(val_tokens),
         "train_losses": [],
@@ -364,27 +404,18 @@ def train(
         elapsed = time.time() - start
         tokens_per_sec = len(train_ds) * seq_len / elapsed
 
-        # validate
-        model.eval()
-        val_loss = 0
-        val_batches = 0
-        with torch.no_grad():
-            for x, y in val_loader:
-                x, y = x.to(device), y.to(device)
-                logits = model(x)
-                loss = F.cross_entropy(logits.view(-1, actual_vocab), y.view(-1))
-                val_loss += loss.item()
-                val_batches += 1
-
-        val_loss = val_loss / max(val_batches, 1)
+        # validate on every window, with the exact characters those windows cover
+        val_loss, val_bpc, val_n_tokens, val_n_chars = evaluate(
+            model, val_tokens, val_char_lens, seq_len, batch_size, device
+        )
         val_ppl = math.exp(min(val_loss, 20))
-        # nats/token -> nats/char -> bits/char
-        val_bpc = val_loss / (val_compression * math.log(2))
 
         metrics["train_losses"].append(train_loss)
         metrics["val_losses"].append(val_loss)
         metrics["val_perplexities"].append(val_ppl)
         metrics["val_bits_per_char"].append(val_bpc)
+        metrics["val_eval_tokens"] = val_n_tokens
+        metrics["val_eval_chars"] = val_n_chars
         metrics["tokens_per_sec"].append(tokens_per_sec)
         metrics["epoch_seconds"].append(elapsed)
 
@@ -392,7 +423,7 @@ def train(
               f"val_ppl={val_ppl:.1f} bpc={val_bpc:.3f} ({elapsed:.0f}s, {tokens_per_sec:.0f} tok/s)")
 
     # save checkpoint
-    ckpt_path = os.path.join(save_dir, f"model_v{vocab_size}.pt")
+    ckpt_path = os.path.join(save_dir, f"model_bl_v{vocab_size}_s{seed}.pt")
     torch.save(model.state_dict(), ckpt_path)
     print(f"Model saved to {ckpt_path}")
 
